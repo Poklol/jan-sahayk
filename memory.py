@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import Dict, List
 
 import streamlit as st
@@ -47,19 +48,40 @@ def get_missing_required_fields(profile: Dict[str, str]) -> List[str]:
 def next_followup_question(missing_fields: List[str]) -> str:
     if not missing_fields:
         return ""
-        
-    question_map = {
-        "name": "What is your name?",
-        "occupation": "What is your profession or occupation (for example: farmer, student, small business owner)?",
-        "income": "What is your yearly family income range? (If you're not sure, it's okay to say 'I don't know').",
-        "loan_amount": "How much loan or financial assistance are you looking for?",
-        "state": "Which state do you currently live in?",
+
+    field_map = {
+        "occupation": "profession",
+        "loan_amount": "loan",
     }
-    
-    if len(missing_fields) > 1:
-        return f"{question_map.get(missing_fields[0], 'Could you provide some more details?')} This will help me find the best loan or welfare schemes for you."
-        
-    return question_map.get(missing_fields[0], "Could you provide one more detail so I can continue?")
+    field = field_map.get(missing_fields[0], missing_fields[0])
+    return ask_missing_field(field)
+
+
+def ask_missing_field(field: str) -> str:
+    prompts = {
+        "name": [
+            "Hey! What should I call you? 🙂",
+            "Before we continue - your name?",
+        ],
+        "profession": [
+            "Got it 👍 What kind of work do you do?",
+            "Nice - what's your profession?",
+        ],
+        "income": [
+            "To match the right schemes - roughly your yearly income?",
+            "Just to narrow it down - your income range?",
+        ],
+        "loan": [
+            "How much support are you roughly looking for?",
+            "What kind of financial help do you need?",
+        ],
+        "state": [
+            "Which state are you in?",
+            "Where are you currently based?",
+        ],
+    }
+    fallback = "Could you share one quick detail so I can help better?"
+    return random.choice(prompts.get(field, [fallback]))
 
 
 def profile_snapshot(profile: Dict[str, str]) -> str:
