@@ -46,7 +46,7 @@ class RAGAgent:
         self._source_docs: List[Document] | None = None
 
         self.splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-            chunk_size=380,
+            chunk_size=512,
             chunk_overlap=50,
         )
 
@@ -107,6 +107,10 @@ class RAGAgent:
             current_block: List[str] = []
             section_count = 0
 
+            state_origin = "Central"
+            if path.stem.startswith("schemes_"):
+                state_origin = path.stem.replace("schemes_", "").replace("_", " ").title()
+
             def flush() -> None:
                 nonlocal section_count
                 block_text = "\n".join(current_block).strip()
@@ -119,6 +123,7 @@ class RAGAgent:
                             "source": str(path),
                             "domain": "local_official_docs",
                             "trusted": True,
+                            "state_origin": state_origin,
                             "scheme_name": current_heading or path.stem,
                             "tags": self._serialize_tags(
                                 self._derive_tags(current_heading or path.stem, block_text)
@@ -161,6 +166,10 @@ class RAGAgent:
                 if created > 0:
                     continue
 
+            state_origin = "Central"
+            if path.stem.startswith("schemes_"):
+                state_origin = path.stem.replace("schemes_", "").replace("_", " ").title()
+
             docs.append(
                 Document(
                     page_content=content,
@@ -168,6 +177,7 @@ class RAGAgent:
                         "source": str(path),
                         "domain": "local_official_docs",
                         "trusted": True,
+                        "state_origin": state_origin,
                         "scheme_name": path.stem,
                         "tags": self._serialize_tags(self._derive_tags(path.stem, content)),
                     },
@@ -298,10 +308,14 @@ class RAGAgent:
 
         return score
 
-    def _lexical_retrieve(self, query: str, top_k: int = 4) -> List[Dict[str, str | float]]:
+    def _lexical_retrieve(self, query: str, top_k: int = 4, state_filter: str = None) -> List[Dict[str, str | float]]:
         docs = self._load_documents()
         ranked: List[tuple[int, Document]] = []
         for doc in docs:
+            if state_filter:
+                origin = doc.metadata.get("state_origin", "Central")
+                if origin != "Central" and state_filter.lower() not in origin.lower():
+                    continue
             score = self._lexical_score(query, doc.page_content, doc.metadata)
             if score >= 2:
                 ranked.append((score, doc))
@@ -396,12 +410,16 @@ class RAGAgent:
         }
         return self._last_index_status
 
-    def retrieve(self, query: str, top_k: int = 4) -> List[Dict[str, str | float]]:
+    def retrieve(self, query: str, top_k: int = 4, state_filter: str = None) -> List[Dict[str, str | float]]:
         if not self.available or self.vectorstore is None:
-            return self._lexical_retrieve(query, top_k=top_k)
+            return self._lexical_retrieve(query, top_k=top_k, state_filter=state_filter)
+
+        filter_dict = None
+        if state_filter:
+            filter_dict = {"state_origin": {"$in": [state_filter.title(), "Central"]}}
 
         try:
-            hits = self.vectorstore.similarity_search_with_relevance_scores(query, k=top_k)
+            hits = self.vectorstore.similarity_search_with_relevance_scores(query, k=top_k, filter=filter_dict)
         except Exception as exc:
             self._last_index_status = {
                 "status": "retrieve_error",
@@ -409,14 +427,18 @@ class RAGAgent:
             }
             rebuild = self.ensure_index(force_reindex=True)
             if str(rebuild.get("status", "")) not in {"indexed", "already_indexed"}:
-                return self._lexical_retrieve(query, top_k=top_k)
+                return self._lexical_retrieve(query, top_k=top_k, state_filter=state_filter)
             try:
-                hits = self.vectorstore.similarity_search_with_relevance_scores(query, k=top_k)
+                hits = self.vectorstore.similarity_search_with_relevance_scores(query, k=top_k, filter=filter_dict)
             except Exception:
-                return self._lexical_retrieve(query, top_k=top_k)
+                return self._lexical_retrieve(query, top_k=top_k, state_filter=state_filter)
 
         evidence: List[Dict[str, str | float]] = []
         for doc, score in hits:
+            # Score filter: ensure the document is highly relevant (> 0.5 relevance)
+            if score < 0.5:
+                continue
+
             page_content = getattr(doc, "page_content", "")
             if not isinstance(page_content, str) or not page_content.strip():
                 continue

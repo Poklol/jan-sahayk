@@ -53,6 +53,9 @@ def _render_sidebar() -> None:
         st.sidebar.error("Set GEMINI_API_KEY in .env, then restart the app.")
 
     if st.sidebar.button("Reset Conversation"):
+        for key in ["orchestrator", "rag_agent", "web_agent"]:
+            if key in st.session_state:
+                del st.session_state[key]
         reset_state()
         st.rerun()
 
@@ -70,30 +73,43 @@ def main() -> None:
     st.title("Jan-Sahayak AI")
     st.caption("AI-powered welfare scheme assistant with RAG + official web updates")
 
-    _render_sidebar()
     _render_chat_history()
 
     prompt = st.chat_input("Describe your situation and benefit need...")
-    if not prompt:
-        return
+    
+    if prompt:
+        append_message("user", prompt)
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-    append_message("user", prompt)
-    with st.chat_message("user"):
-        st.markdown(prompt)
+        with st.spinner("Analyzing profile, checking schemes, and gathering evidence..."):
+            result = st.session_state.orchestrator.handle_query(
+                user_query=prompt,
+                user_profile=st.session_state.user_profile,
+                chat_history=st.session_state.chat_history,
+            )
 
-    with st.spinner("Analyzing profile, checking schemes, and gathering evidence..."):
-        result = st.session_state.orchestrator.handle_query(
-            user_query=prompt,
-            user_profile=st.session_state.user_profile,
-        )
+        st.session_state.user_profile = result.get("updated_profile", st.session_state.user_profile)
+        response_markdown = result.get("response_markdown", "I could not process that request.")
 
-    st.session_state.user_profile = result.get("updated_profile", st.session_state.user_profile)
-    assistant_reply = str(result.get("response_markdown", "I could not process that request."))
+        with st.chat_message("assistant"):
+            if "rag_evidence" in result and result["rag_evidence"]:
+                with st.expander("🔍 RAG Debugger: Retrieved Chunks"):
+                    for i, doc in enumerate(result["rag_evidence"]):
+                        st.markdown(f"**Chunk {i+1} | Score: {doc.get('score', 0):.2f} | Source: {doc.get('source', '')}**")
+                        st.markdown(f"_{doc.get('quote', '')[:200]}..._")
 
-    append_message("assistant", assistant_reply)
-    with st.chat_message("assistant"):
-        st.markdown(assistant_reply)
+            if hasattr(response_markdown, '__iter__') and not isinstance(response_markdown, str):
+                # Stream the response natively
+                assistant_reply = st.write_stream(response_markdown)
+            else:
+                assistant_reply = str(response_markdown)
+                st.markdown(assistant_reply)
 
+        append_message("assistant", assistant_reply)
+
+    # Render sidebar at the end so it uses the most up-to-date user_profile state
+    _render_sidebar()
 
 if __name__ == "__main__":
     main()

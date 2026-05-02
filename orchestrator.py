@@ -88,35 +88,63 @@ class JanSahayakOrchestrator:
             return True
         return False
 
-    def _extract_with_rules(self, user_query: str) -> Dict[str, object]:
+    def _extract_with_rules(self, user_query: str, user_profile: Dict[str, str] = None) -> Dict[str, object]:
         text = user_query.lower()
+        missing = get_missing_required_fields(user_profile) if user_profile else []
         entities: Dict[str, str] = {
+            "name": "",
             "occupation": "",
             "income": "",
+            "loan_amount": "",
             "state": "",
-            "category": "",
         }
+
+        # Name heuristic
+        name_match = re.search(r"(?:my name is|i am) ([a-z\s]+)", text)
+        if name_match:
+            val = name_match.group(1).strip()
+            if len(val.split()) <= 3 and "farmer" not in val and "student" not in val and "labor" not in val and "unemployed" not in val:
+                entities["name"] = val.title()
+        elif len(text.split()) <= 3 and "hello" not in text and "hi" not in text and "skip" not in text:
+            # Strictly map isolated short answers to whatever field we just asked for
+            if missing:
+                current_target = missing[0]
+                if current_target == "name":
+                    entities["name"] = text.title()
+                elif current_target == "loan_amount":
+                    entities["loan_amount"] = text
+                elif current_target == "income":
+                    entities["income"] = text
+                elif current_target == "state":
+                    entities["state"] = text.title()
+                elif current_target == "occupation":
+                    entities["occupation"] = text
+            else:
+                entities["name"] = text.title()
 
         for occ, hints in OCCUPATION_HINTS.items():
             if any(h in text for h in hints):
                 entities["occupation"] = occ
                 break
 
-        income_match = re.search(
-            r"(below\s*\d+\s*lakh|\d+\s*[-to]{1,3}\s*\d+\s*lakh|above\s*\d+\s*lakh|\d+\s*lakh)",
-            text,
-        )
-        if income_match:
-            entities["income"] = income_match.group(1)
+        loan_match = re.search(r"loan\s*(?:of|for|amount)?\s*(\d+\s*lakhs?|\d+\s*k|\d+)", text)
+        if loan_match:
+            entities["loan_amount"] = loan_match.group(1)
+
+        inc_specific = re.search(r"income\s*(?:is|of|range)?\s*([a-z\d\s-]+lakh)", text)
+        if inc_specific:
+            entities["income"] = inc_specific.group(1)
+        else:
+            income_match = re.search(
+                r"(below\s*\d+\s*lakh|\d+\s*[-to]{1,3}\s*\d+\s*lakh|above\s*\d+\s*lakh|\d+\s*lakh)",
+                text,
+            )
+            if income_match and not loan_match:
+                entities["income"] = income_match.group(1)
 
         for state in STATE_KEYWORDS:
             if state in text:
                 entities["state"] = state.title()
-                break
-
-        for category, hints in CATEGORY_HINTS.items():
-            if any(h in text for h in hints):
-                entities["category"] = category
                 break
 
         intent = "scheme_discovery"
@@ -138,24 +166,32 @@ class JanSahayakOrchestrator:
         user_query: str,
         user_profile: Dict[str, str],
     ) -> Dict[str, Any]:
-        fallback = self._extract_with_rules(user_query)
+        fallback = self._extract_with_rules(user_query, user_profile)
         if self.model is None:
             return fallback
+
+        missing = get_missing_required_fields(user_profile)
+        asked_for = missing[0] if missing else 'nothing specific'
 
         prompt = f"""
 You are an information extraction engine.
 Extract intent and profile entities from the user query.
 Return valid JSON only, no markdown.
+The user is currently being asked to provide: {asked_for}. Use this context to interpret short answers.
+Do NOT put numerical amounts (like "1lakh" or "50000") into the "name" field! If it's a number, it belongs in income or loan_amount.
+If the user's message is a single word answering the prompt for their name, extract it into the "name" field.
+If the user specifies they do not know or do not have a certain detail (like "I don't know my income", "null", "none", "skip"), set that specific field's value exactly to "Not Specified" instead of leaving it empty.
 
 Expected JSON schema:
 {{
   "intent": "string",
   "requires_latest": true/false,
   "entities": {{
+    "name": "string",
     "occupation": "string",
     "income": "string",
-    "state": "string",
-    "category": "string"
+    "loan_amount": "string",
+    "state": "string"
   }}
 }}
 
@@ -174,10 +210,11 @@ User query:
             parsed = json.loads(match.group(0))
             entities = parsed.get("entities", {}) if isinstance(parsed, dict) else {}
             normalized = {
+                "name": str(entities.get("name", "")).strip(),
                 "occupation": str(entities.get("occupation", "")).strip(),
                 "income": str(entities.get("income", "")).strip(),
+                "loan_amount": str(entities.get("loan_amount", "")).strip(),
                 "state": str(entities.get("state", "")).strip(),
-                "category": str(entities.get("category", "")).strip(),
             }
             return {
                 "intent": str(parsed.get("intent", fallback["intent"])),
@@ -191,9 +228,10 @@ User query:
 
     def _merge_profile(self, user_profile: Dict[str, str], entities: Dict[str, str]) -> Dict[str, str]:
         updated = user_profile.copy()
-        for key in ["occupation", "income", "state", "category"]:
+        for key in ["name", "occupation", "income", "loan_amount", "state"]:
             value = str(entities.get(key, "")).strip()
-            if value:
+            # Lock the profile mathematically so AI cannot overwrite an existing answer
+            if value and not updated.get(key):
                 updated[key] = value
         return updated
 
@@ -302,12 +340,18 @@ User query:
                 continue
             seen_names.add(key)
 
+            link = extract_from_text(quote, "Official Link")
+            if link == "Not clearly specified in retrieved text.":
+                m = re.search(r'https?://[^\s]+', quote)
+                link = m.group(0) if m else "Link not explicitly found"
+
             cards.append(
                 {
                     "name": name,
                     "eligibility": extract_from_text(quote, "Eligibility"),
                     "benefits": extract_from_text(quote, "Benefits"),
                     "application": extract_from_text(quote, "Application Steps"),
+                    "link": link,
                     "source": source,
                 }
             )
@@ -407,93 +451,30 @@ User query:
         cards = strong[:4]
 
         if not cards and not rag_evidence and not web_evidence:
-            return (
-                "1. ✅ Final Answer\n"
-                "I could not find a reliable matching welfare scheme from indexed documents and official web sources for this query.\n\n"
-                "2. 📊 Eligibility Check\n"
-                f"Profile considered: occupation={profile.get('occupation') or 'NA'}, income={profile.get('income') or 'NA'}, state={profile.get('state') or 'NA'}, category={profile.get('category') or 'NA'}. "
-                "No verifiable scheme criteria were retrieved.\n\n"
-                "3. 📚 Evidence\n"
-                f"{self._format_evidence(rag_evidence, web_evidence, web_status)}\n\n"
-                "4. 🧠 Reasoning\n"
-                "The system attempted retrieval but did not get trustworthy content for a confident recommendation."
-            )
+            return "I'm sorry, I couldn't find any reliable matching welfare schemes from our database or official web sources based on the details you provided. Could you try adjusting your request or providing more details?"
 
+        response_parts = []
         if cards:
             top_names = ", ".join(card["name"] for card in cards[:3])
-            answer_line = (
-                f"Based on your profile, the most relevant schemes appear to be: {top_names}. "
-                "Details below are extracted from indexed scheme documents and should be verified on official portals."
-            )
+            response_parts.append(f"Based on your profile, I found some relevant schemes that might be a great fit for you! The most promising ones are {top_names}.\n")
         else:
-            answer_line = (
-                "I did not find a strong scheme match for this request in the indexed documents. "
-                "I’m showing only partial evidence below, and you should not treat it as a recommendation."
-            )
-
-        eligibility_lines = [
-            f"- Profile considered: occupation={profile.get('occupation') or 'NA'}, income={profile.get('income') or 'NA'}, "
-            f"state={profile.get('state') or 'NA'}, category={profile.get('category') or 'NA'}."
-        ]
+            response_parts.append("I couldn't find a perfect match, but I did find some documents that might include partial information you'd find helpful.\n")
+            
         for card in cards[:4]:
-            eligibility_lines.append(f"- {card['name']}: {self._score_match_reason(card, query, profile)}")
+            url = card.get('link', 'Link not explicitly found')
+                
+            response_parts.append(f"- **Scheme Name**: {card['name']}")
+            response_parts.append(f"  - **Eligibility**: {card['eligibility']}")
+            response_parts.append(f"  - **Benefits**: {card['benefits']}")
+            response_parts.append(f"  - **Official Link**: {url}\n")
 
-        detail_lines: List[str] = []
-        for card in cards[:4]:
-            detail_lines.append(f"- Scheme: {card['name']}")
-            detail_lines.append(f"  Eligibility: {card['eligibility']}")
-            detail_lines.append(f"  Benefits: {card['benefits']}")
-            detail_lines.append(f"  How to Apply: {card['application']}")
-            detail_lines.append(f"  Source File: {card['source']}")
+        if used_web and web_evidence:
+            response_parts.append("\nI also checked the web for some of the latest official updates related to your query:")
+            for web in web_evidence[:3]:
+                response_parts.append(f"- [{web.get('title', 'Official Link')}]({web.get('url', '')})")
 
-        evidence_lines = []
-        if detail_lines:
-            evidence_lines.extend(detail_lines)
-        elif rag_evidence:
-            evidence_lines.append("- RAG matched only weak/partial evidence, so no scheme was promoted as a recommendation.")
-        for item in rag_evidence[:3]:
-            quote = str(item.get("quote", "")).strip().replace("\n", " ")
-            source = str(item.get("source", "unknown"))
-            tags = str(item.get("tags", "")).strip()
-            tag_suffix = f" [tags: {tags}]" if tags else ""
-            evidence_lines.append(f"- RAG Quote: \"{quote[:350]}\" (source: {source}){tag_suffix}")
-        if web_evidence:
-            for web in web_evidence[:4]:
-                evidence_lines.append(
-                    f"- Web Source: [{web.get('title', 'Official Update')}]({web.get('url', '')}) ({web.get('domain', '')})"
-                )
-        elif web_status and web_status.get("status") not in {"ok", "ready"}:
-            evidence_lines.append(f"- Web Search Status: {web_status.get('detail', 'Unavailable.')}")
-        if not evidence_lines:
-            evidence_lines.append("- No valid evidence found.")
-
-        reasoning = (
-            "User profile was extracted and matched against retrieved scheme content. "
-            f"RAG returned {len(rag_evidence)} evidence chunk(s). "
-            + (
-                f"Official web search was used and returned {len(web_evidence)} filtered result(s)."
-                if used_web and web_evidence
-                else (
-                    f"Official web search was attempted but did not produce usable results: {web_status.get('detail', 'Unavailable.')}"
-                    if used_web
-                    else "Web search was skipped because the query did not require freshness and RAG evidence was sufficient."
-                )
-            )
-        )
-
-        eligibility_text = "\n".join(eligibility_lines)
-        evidence_text = "\n".join(evidence_lines)
-
-        return (
-            "1. ✅ Final Answer\n"
-            f"{answer_line}\n\n"
-            "2. 📊 Eligibility Check\n"
-            f"{eligibility_text}\n\n"
-            "3. 📚 Evidence\n"
-            f"{evidence_text}\n\n"
-            "4. 🧠 Reasoning\n"
-            f"{reasoning}"
-        )
+        response_parts.append("\nPlease review these details and kindly visit the official portals linked above to verify the complete eligibility criteria!")
+        return "\n".join(response_parts)
 
     def _fallback_markdown(
         self,
@@ -504,40 +485,26 @@ User query:
         web_status: Dict[str, str] | None = None,
     ) -> str:
         if not rag_evidence and not web_evidence:
-            return (
-                "1. ✅ Final Answer\n"
-                "I could not find a reliable matching welfare scheme from the indexed documents or official web updates right now.\n\n"
-                "2. 📊 Eligibility Check\n"
-                f"Based on your profile ({profile}), there is not enough verified scheme evidence to confirm eligibility.\n\n"
-                "3. 📚 Evidence\n"
-                f"{self._format_evidence(rag_evidence, web_evidence, web_status)}\n\n"
-                "4. 🧠 Reasoning\n"
-                "Your request was analyzed, but no trusted scheme match was retrieved. Please refine your query with scheme type or benefit goal."
-            )
+            return "I couldn't find a reliable matching welfare scheme for your situation right now. It is possible that the exact combination of criteria doesn't match an active scheme. Could you try clarifying your goal?"
 
-        answer = "I found potentially relevant evidence. Only stronger matches are surfaced as recommendations, so please review the evidence and verify final eligibility on the official portal."
-        return (
-            "1. ✅ Final Answer\n"
-            f"{answer}\n\n"
-            "2. 📊 Eligibility Check\n"
-            f"Profile considered: occupation={profile.get('occupation') or 'NA'}, income={profile.get('income') or 'NA'}, "
-            f"state={profile.get('state') or 'NA'}, category={profile.get('category') or 'NA'}. "
-            "Eligibility is a preliminary check pending exact scheme criteria.\n\n"
-            "3. 📚 Evidence\n"
-            f"{self._format_evidence(rag_evidence, web_evidence, web_status)}\n\n"
-            "4. 🧠 Reasoning\n"
-            "The assistant matched your profile and query intent to retrieved scheme snippets, then added official web updates when freshness was requested."
-        )
+        answer = "I found some potentially relevant information based on your answers! I only surface the strongest matches as full recommendations, so please feel free to review the details below."
+        return answer + "\n\n" + self._format_evidence(rag_evidence, web_evidence, web_status)
 
     def _synthesize_markdown(
         self,
         query: str,
         profile: Dict[str, str],
-        rag_evidence: List[Dict[str, str | float]],
+        rag_evidence: List[Dict[str, str]],
         web_evidence: List[Dict[str, str]],
         used_web: bool,
-        web_status: Dict[str, str] | None = None,
-    ) -> str:
+        web_status: Dict[str, str] = None,
+        chat_history: List[Dict[str, str]] = None,
+    ) -> Any:
+        if not rag_evidence or len(rag_evidence) == 0:
+            def empty_generator():
+                yield "I couldn't find relevant information in the database."
+            return empty_generator()
+
         if self.model is None:
             return self._detailed_fallback_markdown(
                 query,
@@ -548,45 +515,33 @@ User query:
                 web_status=web_status,
             )
 
+        formatted_context = "\n\n".join([
+            f"Source {i+1}:\n{doc.get('quote', '')}\nLink: {doc.get('source', '')}" 
+            for i, doc in enumerate(rag_evidence)
+        ])
+
         prompt = f"""
-You are Jan-Sahayak AI, a welfare-scheme assistant.
-Use only provided evidence.
-If evidence is weak, say clearly that no reliable scheme was found.
-Do not invent scheme names, numbers, or benefits.
+Answer ONLY from the context below. Do not invent scheme names, numbers, or benefits.
+If the context does not contain the answer, say "I couldn't find relevant information in the database."
 
-Return markdown with exactly these 4 numbered sections:
-1. ✅ Final Answer
-2. 📊 Eligibility Check
-3. 📚 Evidence
-4. 🧠 Reasoning
+Context:
+{formatted_context}
 
-Quality requirements:
-- Be coherent and detailed.
-- In Final Answer, mention 2-4 scheme names if available.
-- In Eligibility Check, explain likely fit scheme by scheme.
-- In Evidence, include scheme-wise details: eligibility, benefits, application steps, and source.
-- In Reasoning, explicitly mention whether web search was used.
-
-User Query:
+Question:
 {query}
 
-User Profile:
-{json.dumps(profile, ensure_ascii=True)}
-
-RAG Evidence:
-{json.dumps(rag_evidence, ensure_ascii=True)}
-
-Web Evidence:
-{json.dumps(web_evidence, ensure_ascii=True)}
-
-Web Used: {used_web}
-Web Status: {json.dumps(web_status or {}, ensure_ascii=True)}
+Recent History:
+{json.dumps(chat_history[-4:] if chat_history else [], ensure_ascii=True)}
 """
         try:
-            response = self.model.generate_content(prompt)
-            text = (response.text or "").strip()
-            if "1. ✅ Final Answer" in text and "2. 📊 Eligibility Check" in text:
-                return text
+            response = self.model.generate_content(prompt, stream=True)
+            
+            def stream_generator():
+                for chunk in response:
+                    if chunk.text:
+                        yield chunk.text
+            return stream_generator()
+        except Exception as e:
             return self._detailed_fallback_markdown(
                 query,
                 profile,
@@ -609,7 +564,15 @@ Web Status: {json.dumps(web_status or {}, ensure_ascii=True)}
         self,
         user_query: str,
         user_profile: Dict[str, str],
+        chat_history: List[Dict[str, str]] = None,
     ) -> Dict[str, object]:
+        if user_query.strip().lower() in ["hi", "hello", "hey", "greetings"]:
+            return {
+                "updated_profile": user_profile,
+                "response_markdown": "Hello this is Jan-Sahayak AI, what do you need for today? I can help you with that.",
+                "route": "greeting",
+            }
+
         extraction = self.extract_intent_and_entities(user_query, user_profile)
         entities = extraction.get("entities", {}) if isinstance(extraction, dict) else {}
         updated_profile = self._merge_profile(user_profile, entities if isinstance(entities, dict) else {})
@@ -617,17 +580,30 @@ Web Status: {json.dumps(web_status or {}, ensure_ascii=True)}
         missing_fields = get_missing_required_fields(updated_profile)
         if missing_fields:
             followup = next_followup_question(missing_fields)
-            response_text = (
-                "I can help with that. I need one more detail before checking schemes.\n\n"
-                f"{followup}"
-            )
+            response_text = followup
             return {
                 "updated_profile": updated_profile,
                 "response_markdown": response_text,
                 "route": "followup",
             }
 
-        rag_evidence = self.rag_agent.retrieve(user_query, top_k=self.top_k_rag)
+        # Contextual Query Expansion (RAG From Scratch Technique)
+        search_query = user_query
+        if len(user_query.split()) <= 4:
+            parts = []
+            for k in ["occupation", "income", "state"]:
+                val = updated_profile.get(k)
+                if val and val.lower() not in ["not specified", "unknown", "skip"]:
+                    parts.append(val)
+            if parts:
+                search_query = f"{user_query} for {' '.join(parts)}"
+
+        # Metadata Exact Filtering
+        state_filter = updated_profile.get("state", "").strip() or None
+        if state_filter and state_filter.lower() in ["not specified", "unknown", "skip"]:
+            state_filter = None
+
+        rag_evidence = self.rag_agent.retrieve(search_query, top_k=self.top_k_rag, state_filter=state_filter)
         use_web = self._should_use_web(user_query, extraction, rag_evidence)
         web_evidence: List[Dict[str, str]] = []
         web_status: Dict[str, str] = {"status": "not_used", "detail": "Web search was not used."}
@@ -643,6 +619,7 @@ Web Status: {json.dumps(web_status or {}, ensure_ascii=True)}
             web_evidence,
             use_web,
             web_status=web_status,
+            chat_history=chat_history,
         )
 
         return {

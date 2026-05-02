@@ -5,10 +5,11 @@ from typing import Dict, List
 import streamlit as st
 
 DEFAULT_PROFILE: Dict[str, str] = {
+    "name": "",
     "occupation": "",
     "income": "",
+    "loan_amount": "",
     "state": "",
-    "category": "",
 }
 
 
@@ -33,28 +34,41 @@ def update_profile(profile_updates: Dict[str, str]) -> Dict[str, str]:
 
 
 def get_missing_required_fields(profile: Dict[str, str]) -> List[str]:
-    required = ["occupation", "income", "state"]
-    return [field for field in required if not profile.get(field, "").strip()]
+    required = ["name", "occupation", "income", "loan_amount", "state"]
+    missing = []
+    for field in required:
+        val = profile.get(field, "").strip()
+        if not val or val.lower() in ("unknown", "skipped", "not specified"):
+            if not val:
+                missing.append(field)
+    return missing
 
 
 def next_followup_question(missing_fields: List[str]) -> str:
-    question_map = {
-        "occupation": "What is your occupation (for example: farmer, student, laborer, self-employed)?",
-        "income": "What is your yearly family income range (for example: below 2 lakh, 2-5 lakh, above 5 lakh)?",
-        "state": "Which state do you live in?",
-        "category": "If relevant, what is your social category (SC/ST/OBC/General/EWS)?",
-    }
     if not missing_fields:
-        return "Could you share a bit more about your situation so I can check scheme eligibility?"
+        return ""
+        
+    question_map = {
+        "name": "What is your name?",
+        "occupation": "What is your profession or occupation (for example: farmer, student, small business owner)?",
+        "income": "What is your yearly family income range? (If you're not sure, it's okay to say 'I don't know').",
+        "loan_amount": "How much loan or financial assistance are you looking for?",
+        "state": "Which state do you currently live in?",
+    }
+    
+    if len(missing_fields) > 1:
+        return f"{question_map.get(missing_fields[0], 'Could you provide some more details?')} This will help me find the best loan or welfare schemes for you."
+        
     return question_map.get(missing_fields[0], "Could you provide one more detail so I can continue?")
 
 
 def profile_snapshot(profile: Dict[str, str]) -> str:
     lines = [
-        f"- Occupation: {profile.get('occupation') or 'Not provided'}",
+        f"- Name: {profile.get('name') or 'Not provided'}",
+        f"- Profession: {profile.get('occupation') or 'Not provided'}",
         f"- Income: {profile.get('income') or 'Not provided'}",
+        f"- Loan Needed: {profile.get('loan_amount') or 'Not provided'}",
         f"- State: {profile.get('state') or 'Not provided'}",
-        f"- Category: {profile.get('category') or 'Not provided'}",
     ]
     return "\n".join(lines)
 
