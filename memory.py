@@ -8,6 +8,7 @@ import streamlit as st
 DEFAULT_PROFILE: Dict[str, str] = {
     "name": "",
     "occupation": "",
+    "gender": "",
     "income": "",
     "loan_amount": "",
     "state": "",
@@ -35,7 +36,7 @@ def update_profile(profile_updates: Dict[str, str]) -> Dict[str, str]:
 
 
 def get_missing_required_fields(profile: Dict[str, str]) -> List[str]:
-    required = ["name", "occupation", "income", "loan_amount", "state"]
+    required = ["name", "occupation", "gender", "income", "loan_amount", "state"]
     missing = []
     for field in required:
         val = profile.get(field, "").strip()
@@ -45,7 +46,7 @@ def get_missing_required_fields(profile: Dict[str, str]) -> List[str]:
     return missing
 
 
-def next_followup_question(missing_fields: List[str]) -> str:
+def next_followup_question(missing_fields: List[str], profile: Dict[str, str] | None = None) -> str:
     if not missing_fields:
         return ""
 
@@ -54,6 +55,10 @@ def next_followup_question(missing_fields: List[str]) -> str:
         "loan_amount": "loan",
     }
     field = field_map.get(missing_fields[0], missing_fields[0])
+    if field == "income":
+        occupation = ((profile or {}).get("occupation", "") or "").strip().lower()
+        if occupation == "student":
+            return "To match student schemes correctly - what's your family yearly income?"
     return ask_missing_field(field)
 
 
@@ -66,6 +71,10 @@ def ask_missing_field(field: str) -> str:
         "profession": [
             "Got it 👍 What kind of work do you do?",
             "Nice - what's your profession?",
+        ],
+        "gender": [
+            "Please share your gender (male/female) so I can avoid ineligible schemes.",
+            "Quick check: your gender (male/female)?",
         ],
         "income": [
             "To match the right schemes - roughly your yearly income?",
@@ -88,6 +97,7 @@ def profile_snapshot(profile: Dict[str, str]) -> str:
     lines = [
         f"- Name: {profile.get('name') or 'Not provided'}",
         f"- Profession: {profile.get('occupation') or 'Not provided'}",
+        f"- Gender: {profile.get('gender') or 'Not provided'}",
         f"- Income: {profile.get('income') or 'Not provided'}",
         f"- Loan Needed: {profile.get('loan_amount') or 'Not provided'}",
         f"- State: {profile.get('state') or 'Not provided'}",

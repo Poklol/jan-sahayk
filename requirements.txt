@@ -10,3 +10,5 @@ tavily-python>=0.3.3
 python-dotenv>=1.0.1
 tiktoken>=0.7.0
 sentence-transformers>=3.0.1
+faster-whisper>=1.2.1
+deep-translator>=1.11.4

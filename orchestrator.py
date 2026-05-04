@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -49,6 +49,32 @@ CATEGORY_HINTS = {
     "General": ["general"],
 }
 
+OCCUPATION_ALIASES = {
+    "farming": "farmer",
+    "farm": "farmer",
+    "farmer": "farmer",
+    "famring": "farmer",
+    "agriculture": "farmer",
+    "agri": "farmer",
+}
+
+GREETING_HINTS = {
+    "hi",
+    "hello",
+    "hey",
+    "vanakkam",
+    "namaste",
+    "good morning",
+    "good evening",
+    "good afternoon",
+}
+
+STATE_ALIASES = {
+    "kerela": "kerala",
+    "orissa": "odisha",
+    "pondicherry": "puducherry",
+}
+
 SYSTEM_PROMPT = """
 You are an AI Welfare Advisor for Indian citizens.
 
@@ -97,6 +123,13 @@ STATES = {
     "APPLICATION_HELP": "application_help",
 }
 
+NEED_KEYWORDS = {
+    "loan_support": ["loan", "credit", "finance", "financial assistance", "borrow"],
+    "scholarship_support": ["scholarship", "education", "student", "study"],
+    "pension_support": ["pension", "old age", "retirement", "senior"],
+    "housing_support": ["housing", "house", "home", "shelter", "awas"],
+}
+
 
 class JanSahayakOrchestrator:
     def __init__(self, rag_agent, web_agent) -> None:
@@ -122,9 +155,59 @@ class JanSahayakOrchestrator:
             "last_scheme": None,
             "last_schemes": [],
             "current_step": None,
+            "primary_need": "",
         }
 
-    def detect_intent(self, message: str, session: Dict[str, Any]) -> str:
+    def _is_greeting_text(self, text: str) -> bool:
+        normalized = re.sub(r"[^a-zA-Z\s]", " ", (text or "").lower()).strip()
+        normalized = re.sub(r"\s+", " ", normalized)
+        if not normalized:
+            return False
+        if normalized in GREETING_HINTS:
+            return True
+        # Handles short variants like "hi sir", "hello ai", "vanakkam anna"
+        tokens = normalized.split()
+        if tokens and tokens[0] in {"hi", "hello", "hey", "vanakkam", "namaste"}:
+            return True
+        return False
+
+    def _normalize_state(self, raw_state: str) -> str:
+        cleaned = re.sub(r"\s+", " ", (raw_state or "").strip().lower())
+        if not cleaned:
+            return ""
+        if cleaned in STATE_ALIASES:
+            cleaned = STATE_ALIASES[cleaned]
+        return cleaned
+
+    def _pretty_state(self, normalized_state: str) -> str:
+        if not normalized_state:
+            return ""
+        return normalized_state.title()
+
+    def _normalize_occupation(self, raw_occupation: str) -> str:
+        cleaned = re.sub(r"\s+", " ", (raw_occupation or "").strip().lower())
+        if not cleaned:
+            return ""
+        if cleaned in OCCUPATION_ALIASES:
+            return OCCUPATION_ALIASES[cleaned]
+        for alias, canonical in OCCUPATION_ALIASES.items():
+            if alias in cleaned:
+                return canonical
+        return cleaned
+
+    def detect_intent(self, message: Any, session: Dict[str, Any]) -> str:
+        if isinstance(message, dict):
+            raw_intent = str(message.get("intent", "")).strip().upper()
+            mapping = {
+                "SHOW_DOCUMENTS": "documents",
+                "APPLICATION_HELP": "application_help",
+                "MORE_SCHEMES": "more_schemes",
+                "NEXT_STEP": "next_step",
+                "STOP": "completed",
+                "NEW_QUERY": "new_query",
+            }
+            return mapping.get(raw_intent, "scheme_recommendation")
+
         msg = (message or "").lower().strip()
 
         if msg in ["yes", "yeah", "ok", "okay", "sure"]:
@@ -135,6 +218,8 @@ class JanSahayakOrchestrator:
 
         if any(x in msg for x in ["document", "documents", "papers", "required", "docs"]):
             return "documents"
+        if any(x in msg for x in ["eligibility", "eligible", "requirements", "criteria"]):
+            return "eligibility_help"
         if any(x in msg for x in ["apply", "application", "steps", "how to apply", "process"]):
             return "application_help"
         if any(x in msg for x in ["new", "restart", "another question"]):
@@ -157,6 +242,13 @@ class JanSahayakOrchestrator:
         lowered = text.lower()
         return any(word in lowered for word in DETAIL_KEYWORDS)
 
+    def _extract_primary_need(self, text: str) -> str:
+        lowered = (text or "").lower()
+        for need, keys in NEED_KEYWORDS.items():
+            if any(k in lowered for k in keys):
+                return need
+        return ""
+
     def _should_use_web(
         self,
         user_query: str,
@@ -175,6 +267,7 @@ class JanSahayakOrchestrator:
         entities: Dict[str, str] = {
             "name": "",
             "occupation": "",
+            "gender": "",
             "income": "",
             "loan_amount": "",
             "state": "",
@@ -184,9 +277,16 @@ class JanSahayakOrchestrator:
         name_match = re.search(r"(?:my name is|i am) ([a-z\s]+)", text)
         if name_match:
             val = name_match.group(1).strip()
-            if len(val.split()) <= 3 and "farmer" not in val and "student" not in val and "labor" not in val and "unemployed" not in val:
+            if (
+                len(val.split()) <= 3
+                and val not in GREETING_HINTS
+                and "farmer" not in val
+                and "student" not in val
+                and "labor" not in val
+                and "unemployed" not in val
+            ):
                 entities["name"] = val.title()
-        elif len(text.split()) <= 3 and "hello" not in text and "hi" not in text and "skip" not in text:
+        elif len(text.split()) <= 3 and text.strip() not in GREETING_HINTS and "skip" not in text:
             # Strictly map isolated short answers to whatever field we just asked for
             if missing:
                 current_target = missing[0]
@@ -197,7 +297,8 @@ class JanSahayakOrchestrator:
                 elif current_target == "income":
                     entities["income"] = text
                 elif current_target == "state":
-                    entities["state"] = text.title()
+                    norm_state = self._normalize_state(text)
+                    entities["state"] = self._pretty_state(norm_state) if norm_state else text.title()
                 elif current_target == "occupation":
                     entities["occupation"] = text
             else:
@@ -207,6 +308,11 @@ class JanSahayakOrchestrator:
             if any(h in text for h in hints):
                 entities["occupation"] = occ
                 break
+
+        if re.search(r"\b(male|man|boy|gentleman)\b", text):
+            entities["gender"] = "male"
+        elif re.search(r"\b(female|woman|girl|lady)\b", text):
+            entities["gender"] = "female"
 
         loan_match = re.search(r"loan\s*(?:of|for|amount)?\s*(\d+\s*lakhs?|\d+\s*k|\d+)", text)
         if loan_match:
@@ -223,8 +329,9 @@ class JanSahayakOrchestrator:
             if income_match and not loan_match:
                 entities["income"] = income_match.group(1)
 
+        normalized_text = self._normalize_state(text)
         for state in STATE_KEYWORDS:
-            if state in text:
+            if state in text or state == normalized_text:
                 entities["state"] = state.title()
                 break
 
@@ -270,6 +377,7 @@ Expected JSON schema:
   "entities": {{
     "name": "string",
     "occupation": "string",
+    "gender": "string",
     "income": "string",
     "loan_amount": "string",
     "state": "string"
@@ -293,6 +401,7 @@ User query:
             normalized = {
                 "name": str(entities.get("name", "")).strip(),
                 "occupation": str(entities.get("occupation", "")).strip(),
+                "gender": str(entities.get("gender", "")).strip().lower(),
                 "income": str(entities.get("income", "")).strip(),
                 "loan_amount": str(entities.get("loan_amount", "")).strip(),
                 "state": str(entities.get("state", "")).strip(),
@@ -309,12 +418,53 @@ User query:
 
     def _merge_profile(self, user_profile: Dict[str, str], entities: Dict[str, str]) -> Dict[str, str]:
         updated = user_profile.copy()
-        for key in ["name", "occupation", "income", "loan_amount", "state"]:
+        for key in ["name", "occupation", "gender", "income", "loan_amount", "state"]:
             value = str(entities.get(key, "")).strip()
             # Lock the profile mathematically so AI cannot overwrite an existing answer
             if value and not updated.get(key):
+                if key == "state":
+                    norm_state = self._normalize_state(value)
+                    updated[key] = self._pretty_state(norm_state) if norm_state else value
+                    continue
+                if key == "gender":
+                    updated[key] = value.lower()
+                    continue
+                if key == "occupation":
+                    updated[key] = self._normalize_occupation(value)
+                    continue
                 updated[key] = value
         return updated
+
+    def _infer_scheme_gender_target(self, scheme: Dict[str, Any]) -> str:
+        text = " ".join(
+            [
+                str(scheme.get("name", "")),
+                str(scheme.get("eligibility", "")),
+                str(scheme.get("benefits", "")),
+                str(scheme.get("application", "")),
+            ]
+        ).lower()
+        women_patterns = [
+            r"\bwomen\b",
+            r"\bwoman\b",
+            r"\bfemale\b",
+            r"\bgirl\b",
+            r"\bladies\b",
+            r"\bfor women\b",
+            r"\bwomen vendors\b",
+        ]
+        men_patterns = [
+            r"\bmen\b",
+            r"\bmale\b",
+            r"\bfor men\b",
+        ]
+        women_hit = any(re.search(p, text) for p in women_patterns)
+        men_hit = any(re.search(p, text) for p in men_patterns)
+        if women_hit and not men_hit:
+            return "female"
+        if men_hit and not women_hit:
+            return "male"
+        return "any"
 
     def _format_evidence(
         self,
@@ -516,6 +666,10 @@ User query:
 
     def rank_schemes(self, user: Dict[str, str], schemes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         ranked: List[Dict[str, Any]] = []
+        user_state = self._normalize_state(user.get("state", ""))
+        primary_need = str(self.session.get("primary_need", "")).strip().lower()
+        profession = self._normalize_occupation(user.get("occupation", ""))
+        user_gender = (user.get("gender", "") or "").strip().lower()
         for scheme in schemes:
             score = 0
             text = " ".join(
@@ -526,18 +680,53 @@ User query:
                     str(scheme.get("application", "")),
                 ]
             ).lower()
-
-            state = (user.get("state", "") or "").lower()
-            profession = (user.get("occupation", "") or "").lower()
+            scheme_states = self._infer_scheme_states(scheme)
             user_income = self._to_amount(user.get("income", ""))
             scheme_limit = self._extract_income_limit(text)
+            scheme_gender_target = self._infer_scheme_gender_target(scheme)
+            is_agri_scheme = any(
+                k in text for k in ["farmer", "farming", "agriculture", "agri", "kisan", "crop", "horticulture", "livestock"]
+            )
 
-            if state and state in text:
+            # Hard-filter clear state mismatch when scheme explicitly targets other states.
+            if user_state and scheme_states and user_state not in scheme_states:
+                continue
+            # Hard-filter gender-restricted schemes when user gender is missing or mismatched.
+            if scheme_gender_target in {"male", "female"} and (
+                user_gender not in {"male", "female"} or user_gender != scheme_gender_target
+            ):
+                continue
+            # Domain hard-filter: farmer seeking loan should only see agri/farmer schemes.
+            if profession == "farmer" and primary_need == "loan_support" and not is_agri_scheme:
+                continue
+            if user_state and user_state in text:
                 score += 40
             if profession and profession in text:
                 score += 30
+            if profession == "farmer" and is_agri_scheme:
+                score += 45
             if user_income is not None and scheme_limit is not None and user_income <= scheme_limit:
                 score += 30
+            if primary_need == "loan_support":
+                if any(k in text for k in ["loan", "credit", "financial", "bank", "subsidy"]):
+                    score += 40
+                else:
+                    score -= 20
+            elif primary_need == "scholarship_support":
+                if any(k in text for k in ["scholarship", "student", "education"]):
+                    score += 40
+                else:
+                    score -= 20
+            elif primary_need == "pension_support":
+                if "pension" in text:
+                    score += 40
+                else:
+                    score -= 20
+            elif primary_need == "housing_support":
+                if any(k in text for k in ["housing", "house", "home", "shelter", "awas"]):
+                    score += 40
+                else:
+                    score -= 20
 
             item = dict(scheme)
             item["score"] = score
@@ -572,7 +761,7 @@ User query:
 
             response += f"{tag}\n"
             response += f"🌾 *{name}*\n"
-            response += "✔ Eligible based on your profile\n\n"
+            response += "✔ Likely eligible based on your profile\n\n"
             response += "💰 Benefits:\n"
             for b in benefits[:2]:
                 response += f"• {b}\n"
@@ -632,6 +821,38 @@ User query:
             f"🔗 Apply here:\n{scheme.get('link', 'Official link not available')}\n\n"
             "Need help with any step? 👍"
         )
+
+    def handle_eligibility_requirements(
+        self,
+        user: Dict[str, str],
+        scheme: Dict[str, Any] | None,
+    ) -> str:
+        if not scheme:
+            return "Let me first find a suitable scheme for you 👍"
+
+        scheme_name = str(scheme.get("name", "this scheme"))
+        eligibility_text = str(scheme.get("eligibility", "")).strip()
+        lines: List[str] = []
+        if eligibility_text:
+            # Split on sentence/line boundaries only (not individual letters).
+            lines = [seg.strip(" -•") for seg in re.split(r"[.;\n]+", eligibility_text) if seg.strip()]
+
+        response = f"Got it 👍\n\n📋 Eligibility requirements for {scheme_name}:\n"
+        if lines:
+            for item in lines[:4]:
+                response += f"• {item}\n"
+        else:
+            response += "• Eligibility depends on profession/state/income criteria\n"
+            response += "• Check category-specific conditions if applicable\n"
+
+        response += "\n🧾 Your profile snapshot:\n"
+        response += f"• Profession: {user.get('occupation', 'Not provided')}\n"
+        response += f"• State: {user.get('state', 'Not provided')}\n"
+        response += f"• Income: {user.get('income', 'Not provided')}\n"
+        response += "\n🔗 Official link:\n"
+        response += f"{scheme.get('link', 'Official link not available')}\n"
+        response += "\n⚠ Always verify final eligibility on the official website."
+        return response
 
     def handle_more_schemes(
         self,
@@ -858,10 +1079,29 @@ Recent History:
 
     def handle_query(
         self,
-        user_query: str,
+        user_query: Any,
         user_profile: Dict[str, str],
         chat_history: List[Dict[str, str]] = None,
     ) -> Dict[str, object]:
+        query_text = ""
+        if isinstance(user_query, dict):
+            query_text = str(user_query.get("text", "")).strip()
+        else:
+            query_text = str(user_query or "").strip()
+
+        if self._is_greeting_text(query_text):
+            self.session["last_intent"] = "greeting"
+            self.session["current_step"] = None
+            return {
+                "updated_profile": user_profile,
+                "response_markdown": "Hello this is Jan-Sahayak AI, what do you need for today? I can help you with that.",
+                "route": "greeting",
+            }
+
+        inferred_need = self._extract_primary_need(query_text)
+        if inferred_need:
+            self.session["primary_need"] = inferred_need
+
         intent = self.detect_intent(user_query, self.session)
         # Safety guard: do not trigger fresh RAG for non-recommendation follow-ups.
         skip_rag = intent != "scheme_recommendation"
@@ -874,6 +1114,18 @@ Recent History:
                     "updated_profile": user_profile,
                     "response_markdown": response,
                     "route": "documents",
+                }
+            if intent == "eligibility_help":
+                response = self.handle_eligibility_requirements(
+                    user_profile,
+                    self.session.get("last_scheme"),
+                )
+                self.session["last_intent"] = intent
+                self.session["current_step"] = STATES["SHOWING_DOCS"]
+                return {
+                    "updated_profile": user_profile,
+                    "response_markdown": response,
+                    "route": "eligibility_help",
                 }
             if intent == "more_schemes":
                 response = self.handle_more_schemes(
@@ -911,6 +1163,7 @@ Recent History:
                     "last_scheme": None,
                     "last_schemes": [],
                     "current_step": None,
+                    "primary_need": "",
                 }
                 self.last_scheme = None
                 self.last_ranked_schemes = []
@@ -920,15 +1173,7 @@ Recent History:
                     "route": "new_query",
                 }
 
-        if user_query.strip().lower() in ["hi", "hello", "hey", "greetings"]:
-            self.session["last_intent"] = "greeting"
-            return {
-                "updated_profile": user_profile,
-                "response_markdown": "Hello this is Jan-Sahayak AI, what do you need for today? I can help you with that.",
-                "route": "greeting",
-            }
-
-        extraction = self.extract_intent_and_entities(user_query, user_profile)
+        extraction = self.extract_intent_and_entities(query_text, user_profile)
         entities = extraction.get("entities", {}) if isinstance(extraction, dict) else {}
         updated_profile = self._merge_profile(user_profile, entities if isinstance(entities, dict) else {})
 
@@ -943,7 +1188,7 @@ Recent History:
 
         missing_fields = get_missing_required_fields(updated_profile)
         if missing_fields:
-            followup = next_followup_question(missing_fields)
+            followup = next_followup_question(missing_fields, updated_profile)
             response_text = followup
             self.session["last_intent"] = "followup"
             return {
@@ -953,32 +1198,37 @@ Recent History:
             }
 
         # Contextual Query Expansion (RAG From Scratch Technique)
-        search_query = user_query
-        if len(user_query.split()) <= 4:
+        search_query = query_text
+        if len(query_text.split()) <= 4:
             parts = []
             for k in ["occupation", "income", "state"]:
                 val = updated_profile.get(k)
                 if val and val.lower() not in ["not specified", "unknown", "skip"]:
                     parts.append(val)
+            need_hint = str(self.session.get("primary_need", "")).replace("_", " ")
+            if need_hint:
+                parts.append(need_hint)
             if parts:
-                search_query = f"{user_query} for {' '.join(parts)}"
+                search_query = f"{query_text} for {' '.join(parts)}"
 
         # Metadata Exact Filtering
         state_filter = updated_profile.get("state", "").strip() or None
         if state_filter and state_filter.lower() in ["not specified", "unknown", "skip"]:
             state_filter = None
+        if state_filter:
+            state_filter = self._pretty_state(self._normalize_state(state_filter))
 
         rag_evidence = self.rag_agent.retrieve(search_query, top_k=self.top_k_rag, state_filter=state_filter)
-        use_web = self._should_use_web(user_query, extraction, rag_evidence)
+        use_web = self._should_use_web(query_text, extraction, rag_evidence)
         web_evidence: List[Dict[str, str]] = []
         web_status: Dict[str, str] = {"status": "not_used", "detail": "Web search was not used."}
         if use_web:
-            web_query = self._build_web_query(user_query, extraction, rag_evidence, updated_profile)
+            web_query = self._build_web_query(query_text, extraction, rag_evidence, updated_profile)
             web_evidence = self.web_agent.search_official(web_query, max_results=self.top_k_web)
             web_status = getattr(self.web_agent, "last_status", web_status)
 
         markdown = self._synthesize_markdown(
-            user_query,
+            query_text,
             updated_profile,
             rag_evidence,
             web_evidence,

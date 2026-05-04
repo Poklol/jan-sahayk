@@ -1,39 +1,127 @@
-# Lakshadweep Official Welfare Schemes
+# Schemes - Lakshadweep (myScheme API)
 
-This document contains official welfare schemes mapped to Lakshadweep.
+## Union Territory of Lakshadweep Pension Scheme for Widows
 
-## Lakshadweep State Housing Program (Awas Yojana)
-Scheme Type: housing_support
-Good Match Signals: low income, Lakshadweep, rural, urban poor
-Summary: Providing financial assistance for constructing permanent pucca houses for eligible residents in Lakshadweep.
-Eligibility: Must be a resident of Lakshadweep. Family income must be below 2 lakh per annum. Priority given to SC, ST, and BPL categories. Applicant should not own a permanent house.
-Benefits: Financial assistance up to ₹1.2 Lakh for rural and up to ₹2.5 Lakh for urban households, disbursed in three installments directly to the bank account.
-Application Steps: Visit the local Panchayat or Municipal office, verify BPL status, and submit land ownership documents. 
-Official Link: https://lakshadweep.gov.in/housing
+Scheme Type: state_support
+State Origin: Lakshadweep
+Beneficiary State: Lakshadweep
+Category: Social welfare & Empowerment, Women and Child
+Scheme For: Individual
+Close Date: Not specified
+Good Match Signals: Widow, Financial Assistance, Pension
+Official Link: https://www.myscheme.gov.in/schemes/wspsl
 
-## Lakshadweep Farmer Support Scheme (Krishi Sahayata)
-Scheme Type: farmer_support, agriculture, loan_support
-Good Match Signals: farmer, Lakshadweep, agricultural loan, crop
-Summary: Comprehensive financial and input subsidy support for farmers registered in Lakshadweep.
-Eligibility: Marginal or small farmers residing in Lakshadweep owning culturable land up to 2 hectares. 
-Benefits: Direct benefit transfer of ₹6000 per year per family. Subsidized crop loans at 0% interest if repaid on time. Input subsidies for seeds and fertilizers.
-Application Steps: Register on the Lakshadweep Agriculture Portal with Aadhar and land records (Khata/Khasra).
-Official Link: https://agri.lakshadweep.gov.in
+### Brief
+The scheme aims to provide monthly financial assistance of ₹1,500/- to widows in the Union Territory of Lakshadweep. It covers widows who have not remarried and have no source of income.
 
-## Lakshadweep Student Scholarship and Education Aid
-Scheme Type: scholarship_support
-Good Match Signals: student, education, college, Lakshadweep, sc, st, obc
-Summary: Financial assistance for higher education for underprivileged students.
-Eligibility: Resident of Lakshadweep pursuing pre-matric or post-matric education. Annual family income strictly below 2.5 lakh. SC, ST, or OBC students are highly prioritized.
-Benefits: Full tuition fee waiver and an annual stipend of ₹10,000 to ₹15,000 depending on the course of study.
-Application Steps: Apply via the Lakshadweep State Scholarship Portal with income and caste certificates every academic year.
-Official Link: https://scholarships.lakshadweep.gov.in
+## Lakshadweep Scholarship Scheme
 
-## Lakshadweep Old Age Pension Scheme
-Scheme Type: pension_support
-Good Match Signals: elderly, pension, senior citizen, Lakshadweep
-Summary: Monthly pension assistance for destitute senior citizens.
-Eligibility: Must be over 60 years of age (55 for females in certain specific backward districts). Must be below the poverty line (BPL).
-Benefits: A monthly pension of ₹1000 to ₹2500 credited directly to the beneficiary's bank account.
-Application Steps: Apply through the Social Welfare Department in Lakshadweep using the online service portal or at the district collectorate.
-Official Link: https://socialwelfare.lakshadweep.gov.in
+Scheme Type: state_support
+State Origin: Lakshadweep
+Beneficiary State: Lakshadweep
+Category: Education & Learning
+Scheme For: Individual
+Close Date: Not specified
+Good Match Signals: Education, Scholarship, Higher Education
+Official Link: https://www.myscheme.gov.in/schemes/lkdss
+
+### Brief
+The Lakshadweep Scholarship Scheme is a government initiative aimed at providing financial assistance to students from Lakshadweep pursuing higher education.
+
+## Special Jobs to PwDs - Clerical Assistant
+
+Scheme Type: state_support
+State Origin: Lakshadweep
+Beneficiary State: Lakshadweep
+Category: Skills & Employment
+Scheme For: Individual
+Close Date: Not specified
+Good Match Signals: Job, PwD, Clerk, Person With Disabilities, Employment, Disabled Person
+Official Link: https://www.myscheme.gov.in/schemes/sjpwds
+
+### Brief
+The scheme aims to provide employment opportunities to Persons with Disabilities (PwDs) to enhance their financial independence and social inclusion. Through this scheme, PwDs are employed as Clerical Assistants for 89 Days under the District Panchayat offices of their respective islands.
+
+## Special Jobs to PwDs - Helper
+
+Scheme Type: state_support
+State Origin: Lakshadweep
+Beneficiary State: Lakshadweep
+Category: Skills & Employment
+Scheme For: Individual
+Close Date: Not specified
+Good Match Signals: Job, PwD, Helper, Employment, Disabled Person, Person With Disabilities
+Official Link: https://www.myscheme.gov.in/schemes/pwdhelper
+
+### Brief
+Under this scheme, three PwD candidates are employed as Helpers with a monthly salary of ₹9,900/- on an 89-day rotational basis in the District Panchayat offices of their respective islands to address issues related to disabled persons and other associated matters.
+
+## Union Territory of Lakshadweep Pension Scheme for Specially Abled Persons
+
+Scheme Type: state_support
+State Origin: Lakshadweep
+Beneficiary State: Lakshadweep
+Category: Social welfare & Empowerment
+Scheme For: Individual
+Close Date: Not specified
+Good Match Signals: Financial Assistance, Pension, PwD, Person With Disabilities, Disabled
+Official Link: https://www.myscheme.gov.in/schemes/sapsp
+
+### Brief
+​The scheme aims to provide a monthly financial assistance of ₹1,500 to persons with disabilities, including those who are deaf, mute, blind, intellectually disabled, or orthopedically impaired, with a disability level of 40% or more and without any source of income.
+
+## Union Territory of Lakshadweep Pension Scheme for Abandoned Ladies/Destitute
+
+Scheme Type: state_support
+State Origin: Lakshadweep
+Beneficiary State: Lakshadweep
+Category: Social welfare & Empowerment, Women and Child
+Scheme For: Individual
+Close Date: Not specified
+Good Match Signals: Financial Assistance, Pension, Women, Divorced, Abandoned, Destitute
+Official Link: https://www.myscheme.gov.in/schemes/aldspsl
+
+### Brief
+The scheme aims to provide monthly financial assistance of ₹1,500/- to abandoned ladies & destitute women in the UT. The scheme covers women who have been divorced or abandoned by their husband or relatives, have not remarried, & are without any source of income or have only a nominal income.
+
+## Marriage Assistance to Person with Disability / BPL
+
+Scheme Type: state_support
+State Origin: Lakshadweep
+Beneficiary State: Lakshadweep
+Category: Social welfare & Empowerment
+Scheme For: Individual
+Close Date: Not specified
+Good Match Signals: Disability, Financial Assistance, Differently Abled, Marriage, BPL, Scheduled Tribes, PwD
+Official Link: https://www.myscheme.gov.in/schemes/mapdbpl
+
+### Brief
+The scheme aims to support differently-abled brides/bridegrooms from BPL families by providing financial assistance to meet marriage-related expenses. Under this scheme, an amount of ₹30,000/- is provided to Scheduled Tribe, differently-abled brides/bridegrooms for their first marriage.
+
+## Union Territory of Lakshadweep Pension Scheme for Old Age
+
+Scheme Type: state_support
+State Origin: Lakshadweep
+Beneficiary State: Lakshadweep
+Category: Social welfare & Empowerment
+Scheme For: Individual
+Close Date: Not specified
+Good Match Signals: Financial Assistance, Old Age, Pension, Senior Citizen
+Official Link: https://www.myscheme.gov.in/schemes/oaspsl
+
+### Brief
+The scheme aims to provide monthly financial assistance of ₹1,500/- to senior citizens in the UT. The scheme covers persons above 60 years of age who do not have any source of income.
+
+## 25% Capital Investment Subsidy Scheme
+
+Scheme Type: state_support
+State Origin: Lakshadweep
+Beneficiary State: Lakshadweep
+Category: Business & Entrepreneurship
+Scheme For: Infra
+Close Date: Not specified
+Good Match Signals: Capital, Investment, Subsidy, Entrepreneur, Unemployed Youth
+Official Link: https://www.myscheme.gov.in/schemes/25-ciss
+
+### Brief
+The Union Territory of Lakshadweep has implemented the scheme “25% Capital Investment Subsidy” to provide financial assistance to local entrepreneurs for promoting Micro and small Enterprises in Lakshadweep.
